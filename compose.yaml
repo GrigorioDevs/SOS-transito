@@ -1,0 +1,23 @@
+name: sos-transito-dev
+services:
+  db:
+    image: postgis/postgis:16-3.5
+    container_name: sos_transito_db_dev
+    environment:
+      POSTGRES_DB: sos_transito_dev
+      POSTGRES_USER: sos_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Execute scripts/configurar-local.ps1}
+      SOS_APP_PASSWORD: ${SOS_APP_PASSWORD:?Execute scripts/configurar-local.ps1}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/db/01-app-user.sh:/docker-entrypoint-initdb.d/01-app-user.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sos_owner -d sos_transito_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+volumes:
+  postgres_data:

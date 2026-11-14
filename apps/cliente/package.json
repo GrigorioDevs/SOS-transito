@@ -1,0 +1,28 @@
+{
+  "name": "@sos/cliente",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-router": "7.18.5",
+    "@tanstack/react-query": "5.105.0",
+    "@sos/ui": "0.1.0",
+    "@sos/api-client": "0.1.0",
+    "@mui/material": "7.3.11",
+    "@mui/icons-material": "7.3.11",
+    "@emotion/react": "11.14.0",
+    "@emotion/styled": "11.14.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.5",
+    "@vitejs/plugin-react": "6.1.2",
+    "vite-plugin-pwa": "2.0.0"
+  }
+}

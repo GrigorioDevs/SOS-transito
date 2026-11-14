@@ -1,0 +1,20 @@
+.ignicao-recovery-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ignicao-recovery-steps li {
+  border-top: 1px solid #43434a;
+  padding-top: 9px;
+  color: #a0a0a7;
+  font-size: 11px;
+  line-height: 1.45;
+  font-weight: 600;
+}
+
+.ignicao-recovery-steps li span { margin-right: 2px; font-size: 10px; }
+.ignicao-recovery-steps li[aria-current="step"] { border-color: var(--ig-yellow); color: var(--ig-yellow); }

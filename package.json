@@ -1,0 +1,19 @@
+{
+  "name": "sos-transito",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev:cliente": "npm run dev --workspace @sos/cliente",
+    "dev:parceiro": "npm run dev --workspace @sos/parceiro",
+    "dev:admin": "npm run dev --workspace @sos/admin",
+    "dev:auth": "npm run dev --workspace @sos/auth",
+    "build": "npm run build --workspaces --if-present"
+  }
+}
