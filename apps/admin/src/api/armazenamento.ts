@@ -19,7 +19,7 @@ export interface Banco {
   sancoes: SancaoAplicada[];
   avaliacoes: Avaliacao[];
   chamadosSemana: ChamadosSemana[];
-  auditoria: EventoAuditoria[];
+  auditoria: EventoAuditoria[]; // só os eventos de exemplo da demonstração; os novos vão para o servidor
   seq: Record<string, number>;
 }
 

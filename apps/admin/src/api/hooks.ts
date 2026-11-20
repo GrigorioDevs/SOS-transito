@@ -5,15 +5,29 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { listarAuditoria, restaurarDemonstracao } from './auditoria';
 import { listarAvaliacoes, moderarAvaliacao, resumoAvaliacoes, type AcaoAvaliacao } from './avaliacoes';
 import { decidirCaso, listarCasos, simularDenuncia, type AcaoCaso } from './casos';
+import { enviarAuditoria } from './nucleo';
 import { buscarPainelGovernanca, buscarPendencias } from './painel';
 import { buscarRetencao } from './retencao';
 import { decidirBloqueioPendente, decidirRecurso, listarSancoes, resumoSancoes, reverterSancao } from './sancoes';
 import { buscarUsuario, listarUsuarios, reativarUsuario, sancionarUsuario } from './usuarios';
 import type { AbaSancoes, FiltroAuditoria, FiltroAvaliacoes, FiltroUsuarios, Segmento } from './tipos';
 
+// Toda ação só é dada como concluída depois que o registro de auditoria chegou ao servidor.
 function useAcao<V, R = unknown>(fn: (v: V) => Promise<R>) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: fn, onSuccess: () => qc.invalidateQueries({ queryKey: ['gov'] }) });
+  return useMutation({
+    mutationFn: async (v: V) => {
+      const r = await fn(v);
+      try {
+        await enviarAuditoria();
+      } catch {
+        throw new Error('A ação foi feita, mas o registro na auditoria não chegou ao servidor. Ele será reenviado assim que a API responder.');
+      }
+      return r;
+    },
+    // onSettled: a tela reflete a ação mesmo quando só o envio da auditoria falhou.
+    onSettled: () => qc.invalidateQueries({ queryKey: ['gov'] }),
+  });
 }
 
 /* Visão geral e menu */

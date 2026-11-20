@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Sos.Api.Features.Administracao;
 using Sos.Infra.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +11,10 @@ var connection = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("Configure ConnectionStrings:Default com User Secrets.");
 builder.Services.AddDbContext<SosDbContext>(options =>
     options.UseNpgsql(connection, postgres => postgres.UseNetTopologySuite()));
+// Injeção de dependências: services com a lógica de cada área (um por requisição, junto do DbContext).
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<ConfiguracoesService>();
+builder.Services.AddScoped<AuditoriaService>();
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();

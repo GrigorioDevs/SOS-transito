@@ -50,7 +50,7 @@ export default function AdminLayout() {
     confirmar.pedir({
       titulo: 'Restaurar os dados de demonstração?', rotulo: 'Restaurar', semJustificativa: true, perigo: true,
       sucesso: 'Dados de demonstração restaurados.',
-      descricao: 'Denúncias, usuários, bloqueios, avaliações e auditoria voltam ao estado inicial, com datas relativas a agora. As configurações não mudam.',
+      descricao: 'Denúncias, usuários, bloqueios e avaliações voltam ao estado inicial, com datas relativas a agora. As configurações e os registros de auditoria gravados no servidor não mudam.',
       executar: () => restaurar.mutateAsync(undefined),
     });
   };
