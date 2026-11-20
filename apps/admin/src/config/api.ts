@@ -1,31 +1,20 @@
-// API FICTÍCIA da configuração. Persiste no localStorage deste navegador.
-// Para ligar no back-end: troque o corpo de buscarConfiguracoes/salvarConfiguracoes/listarHistorico
-// por GET/PUT /api/admin/configuracoes (por empresa), mantendo as assinaturas.
+// API da configuração, ligada ao back-end (.NET + PostgreSQL):
+//   GET /api/admin/configuracoes          → versão atual (204 = nunca salva: valores padrão, versão 1)
+//   PUT /api/admin/configuracoes          → grava uma versão nova (409 se outra pessoa salvou antes)
+//   GET /api/admin/configuracoes/versoes  → versões salvas; o histórico (diferenças) é montado aqui
+import { pedir } from '../api/http';
 import { CONFIG_PADRAO, ESQUEMA_CONFIG, ROTULO_AO_VENCER, ROTULO_TIPO_SANCAO } from './padrao';
 import { textoDuracao } from './regras';
 import { validarConfig } from './validacao';
 import type { AlteracaoConfig, ConfiguracoesAdmin, Duracao } from './tipos';
 
-const CHAVE = 'sos-admin:configuracoes';
-const CHAVE_HIST = 'sos-admin:configuracoes:historico';
-
 // Usuário logado — fixo até existir login de admin.
 export const USUARIO_ATUAL = 'Cristian';
 
-const atraso = (ms = 300) => new Promise((r) => setTimeout(r, ms));
 const clonar = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
-function ler<T>(chave: string): T | null {
-  try {
-    const t = localStorage.getItem(chave);
-    return t ? (JSON.parse(t) as T) : null;
-  } catch {
-    return null;
-  }
-}
-function gravar(chave: string, valor: unknown) {
-  try { localStorage.setItem(chave, JSON.stringify(valor)); } catch { /* sem armazenamento: vale só nesta sessão */ }
-}
+// Formato devolvido pela API (ConfiguracaoResponse no back-end).
+interface VersaoApi { versao: number; esquema: number; salvoEm: string; salvoPor: string; dados: unknown }
 
 /* ------------- Mescla o que foi salvo com os padrões (campos novos ganham o padrão) ------------- */
 
@@ -52,19 +41,29 @@ function mesclar(padrao: unknown, salvo: unknown): unknown {
   return typeof salvo === typeof padrao ? salvo : padrao;
 }
 
-function carregar(): ConfiguracoesAdmin {
-  const gravado = ler<{ esquema: number; config: unknown }>(CHAVE);
-  if (!gravado || typeof gravado.esquema !== 'number' || gravado.esquema > ESQUEMA_CONFIG) return clonar(CONFIG_PADRAO);
+// Versão vinda da API → objeto completo das telas (campos que faltam recebem o padrão).
+function montar(v: VersaoApi): ConfiguracoesAdmin {
+  if (v.esquema > ESQUEMA_CONFIG) {
+    throw new Error('A configuração foi salva por uma versão mais nova do painel. Atualize a página (Ctrl+F5).');
+  }
   // Migrações entre esquemas entram aqui quando ESQUEMA_CONFIG subir.
-  const c = mesclar(CONFIG_PADRAO, gravado.config) as ConfiguracoesAdmin;
+  const c = mesclar(CONFIG_PADRAO, v.dados) as ConfiguracoesAdmin;
   // Metas são um conjunto fixo de indicadores: indicador novo no padrão aparece; removido some.
   c.metas = CONFIG_PADRAO.metas.map((p) => mesclar(p, c.metas.find((m) => m.id === p.id)) as typeof p);
-  return c;
+  return { ...c, versao: v.versao, atualizadoEm: v.salvoEm, atualizadoPor: v.salvoPor };
 }
 
-let atual = carregar();
+// Só o conteúdo vai para o banco: versão, data e autor são colunas próprias, definidas pelo servidor.
+function dados(c: ConfiguracoesAdmin) {
+  const { versao: _v, atualizadoEm: _e, atualizadoPor: _p, ...resto } = c;
+  return resto;
+}
 
-// Leitura síncrona para a API fictícia de casos (snapshot ao abrir caso / pedir defesa).
+// Última configuração lida do servidor. Começa no padrão até a primeira resposta chegar
+// (o AdminLayout busca a configuração ao abrir o painel).
+let atual = clonar(CONFIG_PADRAO);
+
+// Leitura síncrona para as APIs fictícias de casos/sanções (snapshot ao abrir caso / pedir defesa).
 export const obterConfigAtual = () => clonar(atual);
 
 /* ----------------------------- Histórico (diferenças) ----------------------------- */
@@ -145,36 +144,43 @@ function diferencas(antes: ConfiguracoesAdmin, depois: ConfiguracoesAdmin) {
 /* ----------------------------------- API ----------------------------------- */
 
 export async function buscarConfiguracoes(): Promise<ConfiguracoesAdmin> {
-  await atraso();
+  const v = await pedir<VersaoApi>('GET', '/api/admin/configuracoes');
+  atual = v ? montar(v) : clonar(CONFIG_PADRAO);
   return clonar(atual);
 }
 
 export async function salvarConfiguracoes(nova: ConfiguracoesAdmin): Promise<ConfiguracoesAdmin> {
-  await atraso();
   const erros = validarConfig(nova);
   if (Object.keys(erros).length) throw new Error('A configuração tem campos inválidos. Corrija antes de salvar.');
-  if (nova.versao !== atual.versao) throw new Error('A configuração foi alterada por outra pessoa. Recarregue a página.');
 
-  const agora = new Date().toISOString();
   const salva: ConfiguracoesAdmin = clonar({
     ...nova,
     moderacao: { ...nova.moderacao, niveis: nova.moderacao.niveis.map((n, i) => ({ ...n, ordem: i + 1 })) },
-    versao: atual.versao + 1,
-    atualizadoEm: agora,
-    atualizadoPor: USUARIO_ATUAL,
   });
-  const mudancas = diferencas(atual, salva);
-  if (mudancas.length === 0) return clonar(atual);
+  // Nada mudou em relação ao que foi aberto: não cria versão nova.
+  if (nova.versao === atual.versao && diferencas(atual, salva).length === 0) return clonar(atual);
 
-  const historico = ler<AlteracaoConfig[]>(CHAVE_HIST) ?? [];
-  const novas = mudancas.map((m, i) => ({ id: `${salva.versao}-${i}`, quando: agora, quem: USUARIO_ATUAL, versao: salva.versao, ...m }));
-  gravar(CHAVE_HIST, [...novas, ...historico].slice(0, 500));
-  gravar(CHAVE, { esquema: ESQUEMA_CONFIG, config: salva });
-  atual = salva;
+  // O servidor confere se nova.versao ainda é a atual (senão responde 409 com a mensagem de conflito).
+  const v = await pedir<VersaoApi>('PUT', '/api/admin/configuracoes', {
+    versaoBase: nova.versao,
+    esquema: ESQUEMA_CONFIG,
+    salvoPor: USUARIO_ATUAL,
+    dados: dados(salva),
+  });
+  atual = montar(v!);
   return clonar(atual);
 }
 
+// Histórico: diferença de cada versão salva para a anterior (a versão 2 compara com o padrão, versão 1).
 export async function listarHistorico(): Promise<AlteracaoConfig[]> {
-  await atraso(150);
-  return ler<AlteracaoConfig[]>(CHAVE_HIST) ?? [];
+  const versoes = (await pedir<VersaoApi[]>('GET', '/api/admin/configuracoes/versoes?limite=200')) ?? [];
+  const porVersao = new Map(versoes.map((v) => [v.versao, montar(v)]));
+  const r: AlteracaoConfig[] = [];
+  for (const v of [...versoes].sort((a, b) => b.versao - a.versao)) {
+    const anterior = porVersao.get(v.versao - 1) ?? (v.versao === 2 ? clonar(CONFIG_PADRAO) : undefined);
+    if (!anterior) continue; // versão mais antiga que o limite da listagem: sem base para comparar
+    diferencas(anterior, porVersao.get(v.versao)!).forEach((m, i) =>
+      r.push({ id: `${v.versao}-${i}`, quando: v.salvoEm, quem: v.salvoPor, versao: v.versao, ...m }));
+  }
+  return r;
 }

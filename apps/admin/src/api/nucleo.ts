@@ -5,7 +5,8 @@ import { somarPrazo } from '../config/regras';
 import type { ConfiguracoesAdmin, Sancao } from '../config/tipos';
 import { db, persistir } from './armazenamento';
 import { DIA, ehProcedente } from './dominio';
-import type { AreaAuditoria, Caso, SancaoAplicada, Usuario } from './tipos';
+import { ErroHttp, pedir } from './http';
+import type { AreaAuditoria, Caso, EventoAuditoria, SancaoAplicada, Usuario } from './tipos';
 
 export { USUARIO_ATUAL };
 // Segundo admin simulado: aprova/recusa bloqueios pedidos pelo usuário atual e recebe casos escalados.
@@ -28,10 +29,42 @@ export function novoId(prefixo: string) {
   return `${prefixo}-${b.seq[prefixo]}`;
 }
 
+/* -------------------------------- Auditoria -------------------------------- */
+// Os eventos vão para o servidor (POST /api/admin/auditoria), que grava data e hora.
+// registrar() só enfileira; a fila é enviada em ordem. Se o servidor estiver fora do ar,
+// os eventos ficam na fila e são reenviados no próximo envio.
+
+type NovoEvento = Omit<EventoAuditoria, 'id' | 'quando'>;
+const fila: NovoEvento[] = [];
+let envio: Promise<void> | null = null;
+
+// Respeita os limites das colunas no banco (evita um 400 que travaria a fila).
+const corte = (v: string | undefined, max: number) => (v && v.length > max ? `${v.slice(0, max - 1)}…` : v);
+
 export function registrar(area: AreaAuditoria, quem: string, acao: string, alvo?: string, motivo?: string, ref?: string) {
-  const b = db();
-  b.auditoria.unshift({ id: novoId('A'), quando: agoraISO(), quem, area, acao, alvo, motivo, ref });
-  if (b.auditoria.length > 2000) b.auditoria.length = 2000;
+  fila.push({ area, quem: corte(quem, 80)!, acao: corte(acao, 200)!, alvo: corte(alvo, 200), motivo: corte(motivo, 2000), ref: corte(ref, 60) });
+  void enviarAuditoria().catch(() => { /* fica na fila; quem precisa do resultado chama enviarAuditoria() */ });
+}
+
+// Envia tudo o que está na fila. Rejeita se algum evento não chegou ao servidor.
+export function enviarAuditoria(): Promise<void> {
+  envio ??= (async () => {
+    try {
+      while (fila.length) {
+        try {
+          await pedir('POST', '/api/admin/auditoria', fila[0]);
+        } catch (e) {
+          // 400 = evento recusado pela validação: reenviar não adianta, descarta para não travar a fila.
+          if (!(e instanceof ErroHttp) || e.status !== 400) throw e;
+          console.error('Evento de auditoria recusado pelo servidor:', fila[0], e.message);
+        }
+        fila.shift();
+      }
+    } finally {
+      envio = null;
+    }
+  })();
+  return envio;
 }
 
 export function exigirJustificativa(justificativa: string, cfg: ConfiguracoesAdmin) {
